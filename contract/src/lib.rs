@@ -59,8 +59,8 @@ impl Contract {
         goal: U128,
         name_campaign: String,
     ) -> IdCampaign {
-        // phí khởi tạo 1 campaign là 0.25 near.
-        // assert_at_least_one_yocto();
+        // phí khởi tạo 1 campaign là 1 near.
+        assert_at_least_fee_initial_campaign();
         let init_storage = env::storage_usage();
         let time_start = time_start.0;
         let time_end = time_end.0;
@@ -73,7 +73,8 @@ impl Contract {
             name_campaign,
             creator: env::signer_account_id(),
             goal,
-            amount: 0,
+            /// chi tieu
+            amount: 0, //
             time_start,
             time_end,
             finished: false,
@@ -83,7 +84,7 @@ impl Contract {
         self.list_campaign.push(&campaign.name_campaign);
         self.count_campaign += 1;
         self.id_index += 1;
-        // refund_deposit(init_storage);
+        refund_deposit(init_storage);
         return campaign.id;
     }
 
@@ -96,7 +97,7 @@ impl Contract {
 
     #[payable]
     pub fn cancel_campaign(&mut self, id_campaign: IdCampaign) -> bool {
-        // assert_at_least_one_yocto();
+        assert_at_least_one_yocto();
         let init_storage = env::storage_usage();
         if !self.check_campaign(id_campaign) {
             env::panic_str("This campaign doesn't exsit");
@@ -116,13 +117,13 @@ impl Contract {
             .unwrap_or_else(|| env::panic_str(ERR_TOTAL_SUPPLY_OVERFLOW));
         self.campaign.remove(&id_campaign);
         self.list_campaign.swap_remove(id_campaign);
-        // refund_deposit(init_storage);
+        refund_deposit(init_storage);
         return true;
     }
 
     #[payable]
     pub fn donate(&mut self, id_campaign: IdCampaign, amount: U128) {
-        // assert_at_least_one_yocto();
+        assert_at_least_one_yocto();
         // let deposit_attached = env::attached_deposit();
         let deposit_attached = amount.0;
         if !self.check_campaign(id_campaign) {
@@ -163,7 +164,7 @@ impl Contract {
 
     #[payable]
     pub fn un_donate(&mut self, id_campaign: IdCampaign, amount: U128) {
-        // assert_at_least_one_yocto();
+        assert_at_least_one_yocto();
         // let amount = amount.0 * 1_000_000_000_000_000_000_000_000;
         let amount = amount.0;
         let init_storage = env::storage_usage();
@@ -206,7 +207,7 @@ impl Contract {
             .get(&id_campaign)
             .unwrap()
             .insert(&env::predecessor_account_id(), &amount_contributor);
-        // refund_deposit(init_storage);
+        refund_deposit(init_storage);
     }
 
     #[payable]
@@ -240,7 +241,7 @@ impl Contract {
         }
         campaign.finished = true;
         self.campaign.insert(&id_campaign, &campaign);
-        // refund_deposit(init_storage);
+        refund_deposit(init_storage);
     }
 
     #[payable]
@@ -261,7 +262,7 @@ impl Contract {
         } else {
             env::panic_str("You never donate this campaign");
         }
-        // refund_deposit(init_storage);
+        refund_deposit(init_storage);
     }
 
     pub fn get_amount_donated(&self, id_campaign: IdCampaign) -> u128 {
@@ -297,7 +298,7 @@ impl Contract {
 mod tests {
     use super::*;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, AccountId, Gas, MockedBlockchain, VMContext};
+    use near_sdk::{testing_env, AccountId, VMContext};
 
     fn get_context(is_view: bool, signer: AccountId) -> VMContext {
         let mut builder = VMContextBuilder::new();
@@ -307,17 +308,13 @@ mod tests {
             .predecessor_account_id(signer)
             .is_view(is_view)
             .block_timestamp(100)
-            .block_index(0)
-            // .account_balance(10u128.pow(24))
-            .prepaid_gas(Gas(10u64.pow(18)))
-            .storage_usage(10u64.pow(6));
-
+            .storage_usage(100000);
         builder.build()
     }
 
     #[test]
     fn init_default_contract_test() {
-        let context = get_context(false, AccountId::new_unchecked("alice".to_owned()));
+        let context = get_context(false, accounts(0));
         testing_env!(context);
         let contract = Contract::default();
         assert_eq!(contract.count_campaign, 0, "Id_index must equa zero");
@@ -330,7 +327,8 @@ mod tests {
     }
 
     fn init_lunch_campaign(signer: AccountId) {
-        let context = get_context(false, signer);
+        let mut context = get_context(false, signer);
+        context.attached_deposit = 2 * 10u128.pow(24);
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
@@ -342,7 +340,8 @@ mod tests {
 
     #[test]
     fn test_lunch_campaign() {
-        let context = get_context(false, AccountId::new_unchecked("alice".to_owned()));
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 1 * 10u128.pow(24);
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
@@ -350,25 +349,11 @@ mod tests {
         let goal = U128::from(100 * 10u128.pow(24)); //100near
         let name_campaign = String::from("Khoi Nghiep");
         let result = contract.lunch_campaign(time_start, time_end, goal, name_campaign);
-        // assert_eq!(env::attached_deposit(), 0);
-        let expected_campaign = Campaign {
-            id: 0,
-            name_campaign: "Khoi Nghiep".to_string(),
-            creator: AccountId::new_unchecked("alice".to_owned()),
-            goal: 100 * 10u128.pow(24),
-            amount: 0,
-            time_start: 0,
-            time_end: 100,
-            finished: false,
-            refund: false,
-        };
+
         let compare_campaign = contract.campaign.get(&0).unwrap();
         assert_eq!(result, 0);
-        assert_eq!(
-            compare_campaign.name_campaign,
-            expected_campaign.name_campaign
-        );
-        assert_eq!(compare_campaign.goal, expected_campaign.goal);
+        assert_eq!(compare_campaign.name_campaign, "Khoi Nghiep".to_string());
+        assert_eq!(compare_campaign.goal, 100 * 10u128.pow(24));
         assert_eq!(compare_campaign.amount, 0);
         assert_eq!(contract.count_campaign, 1);
         assert_eq!(contract.id_index, 1);
@@ -376,7 +361,7 @@ mod tests {
 
     #[test]
     fn test_check_campaign() {
-        let context = get_context(false, AccountId::new_unchecked("alice".to_owned()));
+        let context = get_context(false, accounts(0));
         testing_env!(context);
         let contract = Contract::default();
         test_lunch_campaign();
@@ -390,8 +375,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "This campaign doesn't exsit")]
     fn test_cancel_campaign_id() {
-        let context = get_context(false, AccountId::new_unchecked("alice".to_owned()));
-        testing_env!(context);
         let mut contract = Contract::default();
         test_lunch_campaign();
         assert_ne!(contract.cancel_campaign(3), true);
@@ -401,16 +384,18 @@ mod tests {
     #[should_panic(expected = "Just the creator can execute this function")]
     fn test_cancel_campaign_creator() {
         let mut contract = Contract::default();
-        init_lunch_campaign(AccountId::new_unchecked("alice".to_owned()));
-        let context = get_context(false, AccountId::new_unchecked("bob".to_owned()));
+        init_lunch_campaign(accounts(0));
+        let mut context = get_context(false, accounts(5));
+        context.attached_deposit = 1000;
         testing_env!(context);
         assert_ne!(contract.cancel_campaign(0), true);
     }
 
     #[test]
     fn test_cancel_success() {
-        // let context = get_context(false, AccountId::new_unchecked("bob".to_owned()));
-        // testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -423,6 +408,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "This campaign doesn't exsit")]
     fn test_donate_not_exsit() {
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -435,7 +423,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "This campaign not start yet")]
     fn test_donate_fail_not_start() {
-        let context = get_context(false, AccountId::new_unchecked("bob".to_owned()));
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        context.block_timestamp = 0;
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(10);
@@ -443,22 +433,16 @@ mod tests {
         let goal = U128::from(100 * 10u128.pow(24)); //100near
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
-        let time = contract.campaign.get(&0).unwrap().time_start;
         contract.donate(0, U128::from(10))
     }
 
     #[test]
     #[should_panic(expected = "this campaign has end")]
     fn test_donate_fail_not_end() {
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(101000000)
-            .attached_deposit(10);
-        testing_env!(builder.context);
+        let mut context = get_context(false, accounts(0));
+        context.block_timestamp = 1_000_000_000;
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -470,7 +454,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Total supply overflow")]
     fn test_donate_overflow() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
@@ -484,7 +469,8 @@ mod tests {
 
     #[test]
     fn test_donate_success() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
@@ -507,8 +493,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "You haven't donate this campaign before")]
     fn test_un_donate_failed() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(1000);
@@ -516,14 +503,15 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128::from(10));
-        let context = get_context(false, AccountId::new_unchecked(String::from("bob")));
+        context.predecessor_account_id = accounts(1);
         testing_env!(context);
         contract.un_donate(0, U128(5));
     }
 
     #[test]
     fn test_un_donate_success() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
         testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
@@ -539,7 +527,7 @@ mod tests {
                 .contributors
                 .get(&0)
                 .unwrap()
-                .get(&AccountId::new_unchecked(String::from("alice")))
+                .get(&accounts(0))
                 .unwrap(),
             0
         );
@@ -548,14 +536,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "The time of this campaign is not over yet")]
     fn test_finished_campaign_not_end() {
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(101000);
-        testing_env!(builder.context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        context.block_timestamp = 1_000_000;
+        testing_env!(context);
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -568,52 +552,50 @@ mod tests {
     #[test]
     #[should_panic(expected = "You are not the creator of this campaign")]
     fn test_finished_campaign_not_creator() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
         let goal = U128::from(100 * 10u128.pow(24)); //100near
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(1))
-            .predecessor_account_id(accounts(5))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.predecessor_account_id = accounts(2);
+        context.attached_deposit = 1 * 10u128.pow(12);
+        testing_env!(context);
         contract.finished_campaign(0);
     }
 
     #[test]
+    // #[ignore]
     #[should_panic(expected = "This campaign was finished")]
     fn test_finished_campaign_finished() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
         let goal = U128::from(100 * 10u128.pow(24)); //100near
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context);
+        contract.finished_campaign(0);
+
+        assert_eq!(contract.campaign.get(&0).unwrap().finished, true);
         contract.finished_campaign(0);
         contract.finished_campaign(0);
     }
 
-    #[test] // test truong hop amount >= goal
+    #[test]
+    // #[ignore] // test truong hop amount >= goal
     fn test_finished_campaign_ok() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -621,14 +603,8 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128(200));
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context);
         contract.finished_campaign(0);
         assert_eq!(contract.list_campaign_success.len(), 1);
         assert_eq!(contract.campaign.get(&0).unwrap().amount, 0);
@@ -638,8 +614,9 @@ mod tests {
 
     #[test] // test truong hop amount < goal
     fn test_finished_campaign_not_ok() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -647,14 +624,8 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128(90));
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context);
         contract.finished_campaign(0);
         assert_eq!(contract.list_campaign_success.len(), 0);
         assert_eq!(contract.campaign.get(&0).unwrap().amount, 90);
@@ -665,8 +636,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "This campaign can't not refund")]
     fn test_refund_not_refund() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -674,22 +646,17 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128(200));
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context);
         contract.finished_campaign(0);
         contract.refund(0);
     }
     #[test]
     #[should_panic(expected = "You never donate this campaign")]
     fn test_refund_not_exsit() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -697,30 +664,19 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128(50));
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context.clone());
         contract.finished_campaign(0);
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(1))
-            .is_view(false)
-            .block_timestamp(200000000);
-        testing_env!(builder.context);
+        context.predecessor_account_id = accounts(3);
+        testing_env!(context);
         contract.refund(0);
     }
 
     #[test]
     fn test_refund_success() {
-        let context = get_context(false, AccountId::new_unchecked(String::from("alice")));
-        testing_env!(context);
+        let mut context = get_context(false, accounts(0));
+        context.attached_deposit = 2 * 10u128.pow(24);
+        testing_env!(context.clone());
         let mut contract = Contract::default();
         let time_start = U64::from(0);
         let time_end = U64::from(100);
@@ -728,15 +684,8 @@ mod tests {
         let name_campaign = String::from("Khoi Nghiep");
         contract.lunch_campaign(time_start, time_end, goal, name_campaign);
         contract.donate(0, U128(50));
-        // có cách nào để dung account2 để donate tiếp không mà không cần phải cài đặt lại môi trường.
-        let mut builder = VMContextBuilder::new();
-        builder
-            .current_account_id(accounts(0))
-            .signer_account_id(accounts(0))
-            .predecessor_account_id(accounts(0))
-            .is_view(false)
-            .block_timestamp(100000000);
-        testing_env!(builder.context);
+        context.block_timestamp = 1_000_000_000;
+        testing_env!(context);
         contract.finished_campaign(0);
         contract.refund(0);
         assert_eq!(contract.campaign.get(&0).unwrap().amount, 0);
